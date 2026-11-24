@@ -52,9 +52,10 @@ jobs:
           node test/test-saramin-api.mjs
           node test/test-md2docx.mjs
 
-      - name: 결정적 스크립트 테스트 (tracker·exp·defense-map·ats-match·retro-stats·hwpx·export·is-fetch·fetch-diag·saramin)
+      - name: 결정적 스크립트 테스트 (tracker·packet·exp·defense-map·ats-match·retro-stats·hwpx·export·is-fetch·fetch-diag·saramin)
         run: |
           bash test/test-tracker.sh
+          python3 test/test-packet.py
           bash test/test-exp.sh
           bash test/test-defense-map.sh
           bash test/test-ats-match.sh
@@ -90,7 +91,7 @@ jobs:
       - name: Node 의존성 (bin/ — 브라우저 바이너리 제외)
         run: cd bin && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
 
-      - name: macOS smoke (preamble·export·md2docx·cron·tracker·exp·hwpx)
+      - name: macOS smoke (preamble·export·md2docx·cron·tracker·packet·exp·hwpx)
         run: |
           /bin/bash --version | head -1
           /bin/bash test/test-preambles.sh
@@ -98,5 +99,6 @@ jobs:
           node test/test-md2docx.mjs
           /bin/bash test/test-cron.sh
           /bin/bash test/test-tracker.sh
+          python3 test/test-packet.py
           /bin/bash test/test-exp.sh
           /bin/bash test/test-hwpx.sh

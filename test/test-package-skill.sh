@@ -26,6 +26,7 @@ echo "$NAMES" | grep -qE '^auto/(bin|templates|docs)/' && ng "bin/templates/docs
 if bash "$BIN" all --out "$WORK/all" >/dev/null 2>&1; then
   N=$(ls "$WORK/all"/*.zip 2>/dev/null | wc -l | tr -d ' ')
   [ "$N" -ge 16 ] && ok "all → zip ${N}개" || ng "all → zip ${N}개(16 미만)"
+  [ ! -f "$WORK/all/personal-career.zip" ] && ok "로컬 지원 스킬 제외" || ng "로컬 스킬이 업로드용 zip에 포함됨"
 else ng "all 실행 실패"; fi
 
 # 3. 없는 스킬 → exit 1
@@ -97,7 +98,7 @@ print('\n'.join(bad))
 sys.exit(1 if bad or n < 16 else 0)
 PY
 ); FM_RC=$?
-[ "$FM_RC" -eq 0 ] && ok "16개 zip 프론트매터 — 허용 키만·when_to_use 병합·본문 보존" || ng "프론트매터 정규화: $FM_OUT"
+[ "$FM_RC" -eq 0 ] && ok "전체 zip 프론트매터 — 허용 키만·when_to_use 병합·본문 보존" || ng "프론트매터 정규화: $FM_OUT"
 grep -q '^when_to_use:' "$REPO/resume/SKILL.md" && grep -q '^argument-hint:' "$REPO/resume/SKILL.md" \
   && ok "저장소 SKILL.md 는 Claude Code 전용 키를 그대로 유지" || ng "저장소 SKILL.md 의 when_to_use·argument-hint 가 사라짐"
 

@@ -1,0 +1,452 @@
+#!/usr/bin/env python3
+"""Track local, revision-specific approval and submission of job applications."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime as dt
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+import tempfile
+
+
+JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}")
+DIGEST = re.compile(r"[a-f0-9]{64}")
+
+
+class PacketError(Exception):
+    pass
+
+
+def now():
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def within(path, directory):
+    return path == directory or directory in path.parents
+
+
+def outside_checkout(path):
+    if within(path, Path(__file__).resolve().parents[1]):
+        raise PacketError("Keep private packet input, state, and evidence outside the JobStack checkout.")
+
+
+def is_desktop_metadata(path):
+    return path.name in {".DS_Store", "Thumbs.db", "desktop.ini"} or path.name.startswith("._")
+
+
+@contextlib.contextmanager
+def open_regular(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise PacketError(f"Expected a regular file: {path}")
+        yield stream
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def file_digest(path, destination=None):
+    digest = hashlib.sha256()
+    size = 0
+    with open_regular(path) as source, contextlib.ExitStack() as stack:
+        target = stack.enter_context(destination.open("xb")) if destination else None
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+            size += len(chunk)
+            if target is not None:
+                target.write(chunk)
+        if target is not None:
+            target.flush()
+            os.fsync(target.fileno())
+    return {"sha256": digest.hexdigest(), "size": size}
+
+
+def inventory(directory, root, files, destination):
+    if not stat.S_ISDIR(directory.lstat().st_mode):
+        raise PacketError(f"Expected a directory and no symlinks: {directory}")
+    if destination is not None:
+        destination.mkdir(mode=0o700, exist_ok=True)
+    for entry in directory.iterdir():
+        if is_desktop_metadata(entry):
+            continue
+        relative = entry.relative_to(root).as_posix()
+        target = destination / entry.name if destination is not None else None
+        if stat.S_ISDIR(entry.lstat().st_mode):
+            inventory(entry, root, files, target)
+        else:
+            files[relative] = file_digest(entry, target)
+    if destination is not None:
+        sync_directory(destination)
+
+
+def read_job(root, job_id):
+    with open_regular(root / "job.json") as stream:
+        job = json.load(stream)
+    if not isinstance(job, dict) or job.get("id") != job_id:
+        raise PacketError("job.json id must match JOB_ID.")
+    for field in ("company", "position"):
+        if not isinstance(job.get(field), str) or not job[field].strip():
+            raise PacketError(f"job.json requires a nonempty {field}.")
+    return job
+
+
+def packet_digest(root, job_id, destination=None):
+    if not stat.S_ISDIR(root.lstat().st_mode):
+        raise PacketError(f"Packet must be a directory: {root}")
+    allowed = {"job.json", "answers", "attachments"}
+    names = {entry.name for entry in root.iterdir() if not is_desktop_metadata(entry)}
+    if not {"job.json", "answers"} <= names <= allowed:
+        raise PacketError("Packet root requires job.json and answers/, with optional attachments/.")
+    identity = root / "job.json"
+    files = {"job.json": file_digest(identity, destination / "job.json" if destination else None)}
+    for name in sorted(names - {"job.json"}):
+        inventory(root / name, root, files, destination / name if destination else None)
+    if not any(name.startswith("answers/") and info["size"] for name, info in files.items()):
+        raise PacketError("answers/ must contain at least one nonempty final answer file.")
+    if destination is not None:
+        sync_directory(destination)
+    manifest = json.dumps({"version": 1, "files": files}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(manifest.encode()).hexdigest(), read_job(destination or root, job_id)
+
+
+def save_state(directory, state):
+    fd, name = tempfile.mkstemp(prefix=".state-", dir=directory)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(state, stream, ensure_ascii=True, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(directory / "state.json")
+        sync_directory(directory)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def load_state(directory, job_id):
+    try:
+        with open_regular(directory / "state.json") as stream:
+            state = json.load(stream)
+    except FileNotFoundError:
+        return None
+    if (
+        not isinstance(state, dict)
+        or state.get("version") != 1
+        or state.get("job_id") != job_id
+        or not DIGEST.fullmatch(str(state.get("revision")))
+        or not isinstance(state.get("source"), str)
+        or not Path(state["source"]).is_absolute()
+        or not isinstance(state.get("snapshotted_at"), str)
+        or ("pending_at" in state and "approved_at" not in state)
+        or ("receipt" in state and "pending_at" not in state)
+        or not isinstance(state.get("failed_attempts", []), list)
+    ):
+        raise PacketError("Invalid packet state.")
+    for number, attempt in enumerate(state.get("failed_attempts", []), start=1):
+        if (
+            not isinstance(attempt, dict)
+            or attempt.get("attempt") != number
+            or not DIGEST.fullmatch(str(attempt.get("revision")))
+            or not DIGEST.fullmatch(str(attempt.get("sha256")))
+        ):
+            raise PacketError("Invalid failed attempt history.")
+    return state
+
+
+def snapshot(directory, state, job_id, source):
+    if state is not None and "pending_at" in state:
+        raise PacketError("A submission is already pending or recorded for this job.")
+    revisions = directory / "revisions"
+    revisions.mkdir(mode=0o700, exist_ok=True)
+    sync_directory(directory)
+    with tempfile.TemporaryDirectory(prefix=".snapshot-", dir=revisions) as staging:
+        payload = Path(staging) / "payload"
+        payload.mkdir(mode=0o700)
+        revision, _ = packet_digest(source, job_id, payload)
+        current, _ = packet_digest(source, job_id)
+        if current != revision:
+            raise PacketError("Packet input changed while snapshotting. Review it and snapshot again.")
+        if state is not None and state["revision"] == revision:
+            raise PacketError("This is already the current revision.")
+        archive = revisions / revision
+        if archive.exists():
+            archived, _ = packet_digest(archive, job_id)
+            if archived != revision:
+                raise PacketError("Stored snapshot failed integrity verification.")
+        else:
+            payload.rename(archive)
+            sync_directory(revisions)
+        for entry in archive.rglob("*"):
+            if not is_desktop_metadata(entry) and not entry.is_symlink():
+                entry.chmod(0o500 if entry.is_dir() else 0o400)
+        archive.chmod(0o500)
+        return {
+            "version": 1, "job_id": job_id, "source": str(source), "revision": revision,
+            "snapshotted_at": now(), "failed_attempts": state.get("failed_attempts", []) if state else [],
+        }
+
+
+def source_matches(state, job_id):
+    try:
+        revision, _ = packet_digest(Path(state["source"]), job_id)
+        return revision == state["revision"]
+    except (PacketError, OSError, ValueError):
+        return False
+
+
+def archive_evidence(store, directory, state, evidence):
+    evidence = evidence.expanduser()
+    if evidence.is_symlink():
+        raise PacketError("Evidence must be a regular file and no symlink.")
+    evidence = evidence.resolve(strict=True)
+    outside_checkout(evidence)
+    if within(evidence, store) or within(evidence, Path(state["source"])):
+        raise PacketError("Keep confirmation evidence outside the packet input and store.")
+    archive = directory / "evidence"
+    archive.mkdir(mode=0o700, exist_ok=True)
+    sync_directory(directory)
+    with tempfile.TemporaryDirectory(prefix=".evidence-", dir=archive) as staging:
+        copy = Path(staging) / "evidence"
+        info = file_digest(evidence, copy)
+        if not info["size"]:
+            raise PacketError("Evidence must be nonempty.")
+        if any(attempt["sha256"] == info["sha256"] for attempt in state.get("failed_attempts", [])):
+            raise PacketError("Evidence was already used for a failed attempt. Use confirmation for this attempt.")
+        stored = archive / info["sha256"]
+        if stored.exists():
+            if file_digest(stored) != info:
+                raise PacketError("Stored evidence failed integrity verification.")
+        else:
+            copy.rename(stored)
+            sync_directory(archive)
+    return {**info, "filename": evidence.name, "recorded_at": now()}
+
+
+def attempt_number(state):
+    return len(state.get("failed_attempts", [])) + 1
+
+
+def reconcile_attempt(store, directory, state, args):
+    if "pending_at" not in state:
+        raise PacketError("Use ready to claim the approved revision before submitting. No pending attempt to reconcile.")
+    if "receipt" in state:
+        raise PacketError("Submission already recorded for this job.")
+    attempt = attempt_number(state)
+    if args.attempt != attempt and (args.attempt is not None or attempt > 1):
+        raise PacketError("Specify the current pending attempt with --attempt from ready or status.")
+
+    if args.command == "receipt":
+        confirmation = args.confirmation.strip()
+        if not confirmation:
+            raise PacketError("Receipt requires a nonempty --confirmation from the actual submission.")
+        evidence = archive_evidence(store, directory, state, args.evidence)
+        state["receipt"] = {**evidence, "confirmation": confirmation}
+    else:
+        reason = args.reason.strip()
+        if not reason:
+            raise PacketError("Failed reconciliation requires a nonempty --reason for confirmed non-submission.")
+        evidence = archive_evidence(store, directory, state, args.evidence)
+        state.setdefault("failed_attempts", []).append({
+            **evidence, "attempt": attempt, "revision": state["revision"], "reason": reason,
+            "approved_at": state.pop("approved_at"), "pending_at": state.pop("pending_at"),
+        })
+
+
+def describe_evidence(directory, record, kind):
+    digest = record.get("sha256") if isinstance(record, dict) else None
+    if not isinstance(digest, str) or not DIGEST.fullmatch(digest):
+        raise PacketError(f"Invalid stored {kind} evidence.")
+    evidence = directory / "evidence" / digest
+    if file_digest(evidence) != {"sha256": digest, "size": record.get("size")}:
+        raise PacketError(f"Stored {kind} evidence failed integrity verification.")
+    return {**record, "evidence_path": str(evidence)}
+
+
+def describe(directory, archive, state, job, matches):
+    receipt = state.get("receipt")
+    if "receipt" in state:
+        receipt = {
+            **describe_evidence(directory, receipt, "success"), "revision": state["revision"],
+            "attempt": attempt_number(state),
+        }
+        status = "submitted"
+    elif "pending_at" in state:
+        status = "pending"
+    elif not matches:
+        status = "changed"
+    else:
+        status = "approved" if "approved_at" in state else "snapshotted"
+    return {
+        "job_id": job["id"], "job": job, "status": status, "revision": state["revision"],
+        "snapshot_path": str(archive), "source_path": state["source"], "source_matches": matches,
+        "snapshotted_at": state["snapshotted_at"], "approved_at": state.get("approved_at"),
+        "pending_at": state.get("pending_at"), "receipt": receipt,
+        "attempt": attempt_number(state) if "pending_at" in state else None,
+        "failed_attempts": [
+            {
+                **describe_evidence(directory, attempt, "non-submission"),
+                "snapshot_path": str(archive.parent / attempt["revision"]),
+            }
+            for attempt in state.get("failed_attempts", [])
+        ],
+    }
+
+
+def run(args):
+    store = (args.state_dir.expanduser() / "packets").resolve()
+    outside_checkout(store)
+    directory = store / args.job_id
+    if args.command == "snapshot":
+        # Check overlap before creating any part of the store, including its lock.
+        input_dir = args.input_dir.expanduser()
+        if input_dir.is_symlink():
+            raise PacketError("Packet input must be a directory and no symlink.")
+        source = input_dir.resolve(strict=True)
+        outside_checkout(source)
+        if within(source, store) or within(store, source):
+            raise PacketError("Packet input and packet store must be separate directories.")
+        store.mkdir(mode=0o700, parents=True, exist_ok=True)
+        directory.mkdir(mode=0o700, exist_ok=True)
+        sync_directory(store)
+        sync_directory(store.parent)
+    elif not directory.exists():
+        if args.command == "status":
+            return {"job_id": args.job_id, "status": "missing"}
+        raise PacketError("No snapshot for this job.")
+
+    with (directory / "lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = load_state(directory, args.job_id)
+        if args.command == "snapshot":
+            state = snapshot(directory, state, args.job_id, source)
+        elif state is None:
+            if args.command == "status":
+                return {"job_id": args.job_id, "status": "missing"}
+            raise PacketError("No snapshot for this job.")
+        elif args.command != "status" and args.revision != state["revision"]:
+            raise PacketError("Revision is no longer current. Inspect status and review the current snapshot.")
+
+        archive = directory / "revisions" / state["revision"]
+        archived, job = packet_digest(archive, args.job_id)
+        if archived != state["revision"]:
+            raise PacketError("Stored snapshot failed integrity verification.")
+        matches = None if "pending_at" in state else source_matches(state, args.job_id)
+        if args.command in {"approve", "ready"}:
+            if "pending_at" in state:
+                raise PacketError("A submission is already pending or recorded for this job. Do not retry.")
+            if not matches:
+                raise PacketError("Packet input changed. Snapshot and approve a new revision before submitting.")
+            if args.command == "approve":
+                if "approved_at" in state:
+                    raise PacketError("This revision is already approved.")
+                state["approved_at"] = now()
+            else:
+                if "approved_at" not in state:
+                    raise PacketError("Approve the exact revision before requesting ready.")
+                state["pending_at"] = now()
+                matches = None
+        elif args.command in {"receipt", "failed"}:
+            reconcile_attempt(store, directory, state, args)
+            if args.command == "failed":
+                matches = source_matches(state, args.job_id)
+
+        result = describe(directory, archive, state, job, matches)
+        if args.command != "status":
+            save_state(directory, state)
+        return result
+
+
+def parser():
+    cli = argparse.ArgumentParser(
+        description="Track final application packets, exact approval, and successful submission locally.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Workflow:
+  1. Use one stable JOB_ID per application. Create an input with job.json
+     (id, company, position), answers/ (at least one nonempty final answer
+     file) and optional attachments/.
+     Keep other material outside the input. Use regular files and directories.
+  2. Run snapshot JOB_ID INPUT_DIR and review the returned snapshot_path.
+  3. With approval for that exact snapshot, run approve JOB_ID REVISION.
+  4. Immediately before an authorized submission, run ready JOB_ID REVISION.
+     This claims one attempt. Submit only from snapshot_path, using your own
+     submission channel. If the outcome is uncertain, check the channel before
+     taking further action. A pending attempt blocks another ready call.
+  5. After confirmed success, run receipt JOB_ID REVISION --success
+     --confirmation TEXT --evidence FILE --attempt N. Use the actual reference
+     or success message and a nonempty confirmation file outside the packet
+     input and store. The CLI records your local attestation of success.
+     --attempt is optional on the first attempt and required on retries.
+  6. If the site confirms nothing was submitted, run failed JOB_ID REVISION
+     --attempt N --not-submitted --reason TEXT --evidence FILE with confirmation
+     for this attempt. This archives the attempt and revokes approval. Review
+     the snapshot and obtain fresh approval before another ready. Snapshot any
+     edits first. If the outcome is uncertain, leave the attempt pending.
+  7. Run status JOB_ID for the current attempt, failure history, and submitted
+     snapshot and receipt for interviews.
+
+Output is JSON on stdout. An error exits nonzero with a message on stderr.
+States: missing, snapshotted, approved, changed, pending, submitted.
+Store: <state-dir>/packets, outside the input. The executable uses no network.""",
+    )
+    cli.add_argument("--state-dir", type=Path, default=Path(os.environ.get("JOBSTACK_STATE_DIR") or "~/.jobstack"),
+                     help="state root, before the command (default: JOBSTACK_STATE_DIR or ~/.jobstack)")
+    commands = cli.add_subparsers(dest="command", required=True)
+    descriptions = {
+        "snapshot": "copy the current final files and return their content revision",
+        "status": "show the current state and any submitted evidence",
+        "approve": "record approval of a reviewed, current revision",
+        "ready": "verify approval and claim a single submission attempt",
+        "receipt": "record actual success for the pending approved revision",
+        "failed": "close a pending attempt after confirmed non-submission and revoke approval",
+    }
+    for command, description in descriptions.items():
+        sub = commands.add_parser(command, help=description, description=description)
+        sub.add_argument("job_id", metavar="JOB_ID", help="id in job.json (letters, digits, - or _)")
+        if command == "snapshot":
+            sub.add_argument("input_dir", type=Path, metavar="INPUT_DIR")
+        if command in {"approve", "ready", "receipt", "failed"}:
+            sub.add_argument("revision", metavar="REVISION", help="full SHA-256 returned by snapshot")
+        if command in {"receipt", "failed"}:
+            sub.add_argument("--attempt", type=int, required=command == "failed", help="current attempt number from ready or status")
+            sub.add_argument("--evidence", type=Path, required=True, help="file containing the confirmation for this attempt")
+        if command == "receipt":
+            sub.add_argument("--success", action="store_true", required=True, help="attest confirmed successful submission")
+            sub.add_argument("--confirmation", required=True, help="confirmation reference or success message")
+        if command == "failed":
+            sub.add_argument("--not-submitted", action="store_true", required=True, help="attest that the site confirmed no submission")
+            sub.add_argument("--reason", required=True, help="reason for confirmed non-submission")
+    return cli
+
+
+def main():
+    cli = parser()
+    args = cli.parse_args()
+    if not JOB_ID.fullmatch(args.job_id):
+        cli.error("JOB_ID must start with an ASCII letter or digit and contain at most 80 letters, digits, - or _.")
+    if hasattr(args, "revision") and not DIGEST.fullmatch(args.revision):
+        cli.error("REVISION must be the full lowercase SHA-256 returned by snapshot.")
+    try:
+        print(json.dumps(run(args), ensure_ascii=False))
+    except (PacketError, OSError, ValueError) as exc:
+        print(f"jobstack-packet: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

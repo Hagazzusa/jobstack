@@ -1,5 +1,7 @@
 # jobstack
 
+이 개인 포크에서는 로컬 커리어 Markdown으로 공고를 고르고, 실제 지원 폼에 맞춰 작성한 서류를 승인한 뒤 접수 기록과 면접 준비까지 이어갑니다. [개인 지원 시작 방법](#로컬-포크에서-개인-지원-시작) · [원본 JobStack](https://github.com/thesun4sky/jobstack)
+
 **한국 취업 통합 엑셀러레이터** — Claude Code 스킬 시스템
 
 4년간 60건+ 자소서 첨삭에서 검증된 방법론을 AI 코칭으로 제공합니다.
@@ -100,7 +102,7 @@ graph LR
 ## 설치
 
 ```bash
-git clone https://github.com/thesun4sky/jobstack.git
+git clone https://github.com/Hagazzusa/jobstack.git
 cd jobstack
 ./install.sh
 ```
@@ -110,7 +112,7 @@ cd jobstack
 플러그인으로 설치하려면(Claude Code 2.1 이상, 저장소가 곧 마켓플레이스):
 
 ```
-/plugin marketplace add thesun4sky/jobstack
+/plugin marketplace add Hagazzusa/jobstack
 /plugin install jobstack@jobstack
 ```
 
@@ -120,6 +122,25 @@ cd jobstack
 - 옵션: `./install.sh --with-insane-search` (차단 사이트 수집 어댑터, Python 3.10+), `./install.sh --prefix` (스킬명에 `jobstack-` 접두어)
 - 매일 자동으로 새 공고·마감 임박·정체 지원 건을 확인하려면 `bin/jobstack-cron install`(로컬 cron/launchd, `~/.jobstack/job-cache/daily-YYYY-MM-DD.md` 생성). 컴퓨터를 꺼두는 시간이 길면 클라우드 Routines 가이드 [docs/routines.md](docs/routines.md).
 - claude.ai / Cowork 에서 쓰려면 `bin/package-skill.sh all` 로 스킬별 zip 을 만들어 업로드합니다 — 상태 저장·수집 스크립트가 없는 축소 모드로 동작합니다([docs/cowork.md](docs/cowork.md)). zip 안의 SKILL.md 는 업로드가 허용하는 프론트매터 키만 남도록 자동으로 정규화됩니다(저장소의 SKILL.md 는 그대로).
+
+### 로컬 포크에서 개인 지원 시작
+
+macOS 또는 Linux에서 Python 3.9 이상을 사용합니다. 이미 클론한 **개인 포크의 체크아웃**에서 Claude Code를 시작합니다. `git remote get-url origin`으로 포크를 확인하세요. `--plugin-dir`는 해당 세션에서 현재 체크아웃의 스킬을 불러옵니다.
+
+```bash
+cd /path/to/career/jobstack
+git remote get-url origin
+./bin/jobstack-packet --help
+claude --plugin-dir "$(pwd -P)"
+```
+
+Claude Code에서는 `/jobstack:personal-career`를 입력합니다. 이 포크에서 `./install.sh`를 사용했다면 `/personal_career`로 호출할 수 있습니다. Orca의 로컬 Codex 채팅이라면 포크를 작업 폴더로 열고 아래처럼 요청합니다.
+
+> `personal-career/SKILL.md`를 읽고 진행해 줘. 기준 기록은 `../내-커리어.md`야. 백엔드 직무, 서울·수도권, 장기 고객사 상주 제외 조건으로 현재 지원 가능한 공고를 비교해 줘. 지원할 공고와 사이트는 내가 고를게.
+
+이미 공고를 골랐다면 공고와 실제 지원 링크를 주고, 진행 중인 건이라면 지원 ID를 줍니다. 기록의 위치가 모호하면 경로를 먼저 확인합니다. 선택한 폼의 문항·글자 수와 출처를 확인해 제출본을 준비합니다. 슬라이드형 포트폴리오를 Cowork에서 제작할 경우 승인한 자료를 넘기고 반환본과 실제 제출 형식을 검증합니다. 공고마다 정확한 리비전을 검토하고 브라우저에서 직접 제출하는 것이 기본입니다. 에이전트가 한 번 대신 제출하려면 해당 공고와 리비전에 대한 별도 허용이 필요합니다. 공식 접수 증거를 확인한 뒤 보관한 공고와 그때 제출한 자료로 직무 준비를 시작합니다. [개인 지원 스킬](personal-career/SKILL.md) · [패킷과 접수](personal-career/references/packet.md)
+
+커리어 원본, 작성 중인 답변, 접수 증거는 포크 작업 트리 밖에 둡니다. 패킷 상태는 `JOBSTACK_STATE_DIR`(기본 `~/.jobstack`)의 `packets/`에 저장됩니다.
 
 ---
 
@@ -145,6 +166,7 @@ jobstack-view 기업분석-삼성전자.md  # 스타일링된 HTML로 변환
 | 스킬 | 설명 | Tier |
 |------|------|------|
 | `/auto` | 파일 자동 감지 + 단계별 가이드 (진입점) | 1 |
+| `personal-career/` (로컬 전용) | 개인 기록 기반 공고 비교, 폼별 답변·첨부 준비, 검토본 승인·접수 확인·직무 준비 | 1 |
 | `/strategy` | 역량 진단 + 취업전략 + 로드맵 생성 | 1 |
 | `tracker/` (CLI 전용) | 지원 현황 추적 + 일정 관리 — 봇에서는 네이티브 `/track`·`/myapps` | 1 |
 | `/company_research` | 7가지 키워드 소스 기업분석 + 적합도 스코어링 | 2 |

@@ -7,7 +7,7 @@ Cowork 와 claude.ai 는 `~/.claude/skills/` 나 플러그인 캐시를 읽지 �
 ## 패키지 만들기
 
 ```bash
-bin/package-skill.sh all            # dist/skills/<skill>.zip 16개
+bin/package-skill.sh all            # 업로드용 16개 스킬 (personal-career는 로컬 실행)
 bin/package-skill.sh resume         # 하나만
 ```
 
@@ -30,6 +30,7 @@ zip 에는 `SKILL.md`, `references/**`, `scripts/preamble.sh` 만 들어간다. 
 
 - **온전히 동작**: resume·cover-letter·career-history·review·mock-interview·strategy·portfolio·scout-profile·ncs·experience-bank(카드는 채팅으로 제시) — 방법론·게이트·references 가 모두 패키지 안에 있다.
 - **축소 동작**: company-research·salary(WebSearch 만), job-search(붙여넣은 공고 분석만), auto(파일 스캔은 가능하나 대시보드의 상태 파일은 없음), tracker(스크립트 없음 — 표로만 정리), retro(집계 스크립트 없음).
+- **로컬에서 실행**: `personal-career`는 로컬 포크의 기록·패킷·브라우저를 사용한다. Cowork에서 PPTX가 필요한 경우에는 [승인된 브리프와 자료](../personal-career/references/cowork-pptx.md)로 제작하고, 반환한 파일을 로컬 포크에서 검증한다.
 
 ## 업로드 후 확인 항목
 

@@ -17,13 +17,13 @@
 - 설정 관리: `bin/jobstack-config` (get/set/list)
 - 결정적 스크립트 계층(`bin/`): 상태 파일은 스킬이 손으로 쓰지 않고 스크립트가 쓴다 — `jobstack-tracker`(지원 현황), `jobstack-exp.mjs`(경험 카드), `jobstack-defense-map.mjs`(방어맵), `jobstack-ats-match`(키워드 매칭률), `jobstack-retro-stats`(회고 집계), `jobstack-fetch-diag`(수집 진단 집계), `hwpx2md.py`(한글 문서 변환), `md2docx.mjs`(pandoc 없는 docx 폴백), `jobstack-cron`(공고 모니터링 반복 실행·cron/launchd 등록), `jobstack-learn`(운영 학습 로그 — 메타만), `jobstack-netpay`(4대보험 근로자 부담분·최저임금 하한 — 법정 값은 `bin/data/statutory-<연도>.json` 에 출처·확인일과 함께 두고, 없는 시점은 계산을 거부), `package-skill.sh`(claude.ai/Cowork 업로드 zip), `release.sh`(버전 파일·CHANGELOG 검사 후 주석 태그와 GitHub 릴리스 생성 — `.github/workflows/release.yml` 수동 실행이 호출). `test/test-script-layer.sh` 가 직접 편집 지시를 잡는다
 - 서브에이전트: `agents/researcher.md` — company-research·salary·strategy 가 Agent 도구로 소스별 병렬 리서치를 맡긴다(JSON 반환 계약, 출처·기준일 필수)
-- 플러그인: `.claude-plugin/plugin.json`(스킬 16개·에이전트) + `.claude-plugin/marketplace.json`. `test/test-plugin-manifest.sh` 가 VERSION·스킬 목록 정합을 검사한다. `install.sh` 심링크 설치와 병행 지원
+- 플러그인: `.claude-plugin/plugin.json`(스킬 17개·에이전트) + `.claude-plugin/marketplace.json`. `test/test-plugin-manifest.sh` 가 VERSION·스킬 목록 정합을 검사한다. `install.sh` 심링크 설치와 병행 지원
 
 ## preamble-tier
 
 | Tier | 용도 | 스킬 |
 |------|------|------|
-| 1 | 진입점, 항상 사용 가능 | auto, strategy, tracker |
+| 1 | 진입점, 항상 사용 가능 | auto, personal-career, strategy, tracker |
 | 2 | 분석/조사 | company-research, portfolio, job-search, ncs, salary, retro, experience-bank |
 | 3 | 문서 작성 | resume, cover-letter, career-history, scout-profile |
 | 4 | 복합 대화형 | mock-interview, review |

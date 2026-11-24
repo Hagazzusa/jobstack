@@ -41,7 +41,7 @@ echo "  → $STATE_DIR"
 echo "[2/4] 스킬 설치 ($SKILLS_DIR)..."
 mkdir -p "$SKILLS_DIR"
 
-SKILL_DIRS=(auto strategy company-research resume cover-letter portfolio mock-interview job-search ncs salary tracker review retro experience-bank career-history scout-profile)
+SKILL_DIRS=(auto personal-career strategy company-research resume cover-letter portfolio mock-interview job-search ncs salary tracker review retro experience-bank career-history scout-profile)
 
 skill_source() { # 저장소 루트 배치와 skills/ 배치 둘 다 지원
   if [ -d "$SCRIPT_DIR/skills/$1" ]; then echo "$SCRIPT_DIR/skills/$1"; else echo "$SCRIPT_DIR/$1"; fi
@@ -149,6 +149,7 @@ echo "  Claude Code에서 /auto 를 입력하면 자동으로 시작됩니다."
 echo ""
 echo "주요 스킬:"
 echo "  /auto              — 파일 자동 감지 + 단계별 가이드"
+echo "  /personal_career   — 로컬 커리어 기록으로 공고 선택·지원 준비·접수 확인"
 echo "  /strategy          — 취업전략 수립"
 echo "  /company_research  — 기업분석"
 echo "  /resume            — 이력서 작성/첨삭"

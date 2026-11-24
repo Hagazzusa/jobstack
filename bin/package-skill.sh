@@ -129,6 +129,14 @@ PY
 
 RC=0
 for skill in $(skill_list); do
+  if [ "$skill" = personal-career ]; then
+    rm -f "$OUT/personal-career.zip"
+    if [ "$TARGET" != all ]; then
+      echo "personal-career는 로컬 포크에서 실행하세요." >&2
+      exit 1
+    fi
+    continue
+  fi
   SRC="$ROOT/$skill"
   if [ ! -f "$SRC/SKILL.md" ]; then echo "[FAIL] $skill: SKILL.md 없음" >&2; RC=1; continue; fi
   rm -f "$OUT/$skill.zip"   # 실패했을 때 이전 실행의 zip(정규화 전 것일 수 있다)이 남지 않게 먼저 지운다
@@ -142,7 +150,7 @@ for skill in $(skill_list); do
     echo "[FAIL] $skill: 프론트매터 정규화 실패 — $NORM" >&2; RC=4; rm -rf "$WORK"; continue
   fi
   # Claude Code 전용으로 알고 빼는 키 외의 것이 빠졌으면 알린다(조용한 유실 방지)
-  UNKNOWN=$(echo "$NORM" | sed -n 's/^dropped=\([^ ]*\).*/\1/p' | tr ',' '\n' | grep -vxE 'argument-hint|model|effort|' | tr '\n' ' ')
+  UNKNOWN=$(echo "$NORM" | sed -n 's/^dropped=\([^ ]*\).*/\1/p' | tr ',' '\n' | grep -vxE '(argument-hint|model|effort)?' | tr '\n' ' ')
   [ -z "${UNKNOWN// /}" ] || echo "[안내] $skill: 업로드용 프론트매터에서 뺀 키 — $UNKNOWN" >&2
   [ -d "$SRC/references" ] && cp -R "$SRC/references" "$WORK/$skill/"
   if [ -d "$SRC/scripts" ]; then mkdir -p "$WORK/$skill/scripts"; cp "$SRC/scripts/preamble.sh" "$WORK/$skill/scripts/" 2>/dev/null || true; fi

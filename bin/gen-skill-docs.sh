@@ -8,7 +8,7 @@
 #
 # 각 스킬이 어떤 참조 파일을 필요로 하는지는 SKILL.md 본문의
 # `${CLAUDE_SKILL_DIR}/references/<name>.md`(또는 bare `references/<name>.md`) 언급에서 읽는다. guardrails.md 는 항상 포함하고,
-# bot-protocol.md 는 봇에 노출되는 스킬(tracker·ncs 제외)에 항상 포함한다.
+# bot-protocol.md 는 봇에 노출되는 스킬(tracker·ncs·personal-career 제외)에 항상 포함한다.
 #
 # 스킬 안에 복제본을 두는 이유(검토 보고서 D-1): Claude Code 의 Read 도구는 심링크 설치에서
 # ${CLAUDE_SKILL_DIR}/../templates/… 경로를 열지 못한다. 참조는 스킬 디렉토리 안쪽만 가리켜야 한다.
@@ -24,7 +24,7 @@ DOCS="$ROOT/docs"
 CHECK=0
 [ "${1:-}" = "--check" ] && CHECK=1
 
-NO_BOT_SKILLS=" tracker ncs "
+NO_BOT_SKILLS=" tracker ncs personal-career "
 
 # 스킬 디렉토리 목록 (저장소 루트 배치와 skills/ 배치 둘 다 지원)
 skill_dirs() {

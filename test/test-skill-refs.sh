@@ -9,7 +9,7 @@
 # 검사:
 #   ① ${CLAUDE_SKILL_DIR}/… 참조에 `..` 이 없고, 대상 파일이 존재
 #   ② 생성 파일(scripts/·references/)이 원본과 일치 — bin/gen-skill-docs.sh --check
-#   ③ 봇 노출 스킬은 bot-protocol 주입 라인이 있고, CLI 전용 스킬(tracker·ncs)은 없음
+#   ③ 봇 노출 스킬은 bot-protocol 주입 라인이 있고, CLI 전용 스킬에는 없음
 #   ④ 봇 전용 마커가 SKILL.md 본문에 남아 있지 않음 (IMAGE_PROMPT / [CHOICES] / OUTPUT_FILE / render-docx)
 #   ⑤ 본문에 bare `docs/…md`·`templates/…md` 참조가 없음 — 스킬 밖이라 Read 실패(D-1 회귀, 리뷰 반영)
 
@@ -17,7 +17,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 FAIL=0
-NO_BOT=" tracker ncs "
+NO_BOT=" tracker ncs personal-career "
 
 skill_dirs() {
   local d

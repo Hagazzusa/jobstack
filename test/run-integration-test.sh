@@ -92,11 +92,11 @@ else
   log_test "FAIL" "심링크 생성 (~/.claude/skills/auto)" "심링크 없음"
 fi
 
-SKILL_COUNT=$(ls -d "$HOME/.claude/skills"/{auto,strategy,resume,cover-letter,company-research,mock-interview,review,tracker,retro,portfolio,job-search,ncs,salary,experience-bank,career-history,scout-profile} 2>/dev/null | wc -l | tr -d ' ')
-if [ "$SKILL_COUNT" -eq 16 ]; then
-  log_test "PASS" "전체 16개 스킬 설치"
+SKILL_COUNT=$(ls -d "$HOME/.claude/skills"/{auto,personal-career,strategy,resume,cover-letter,company-research,mock-interview,review,tracker,retro,portfolio,job-search,ncs,salary,experience-bank,career-history,scout-profile} 2>/dev/null | wc -l | tr -d ' ')
+if [ "$SKILL_COUNT" -eq 17 ]; then
+  log_test "PASS" "전체 17개 스킬 설치"
 else
-  log_test "FAIL" "전체 16개 스킬 설치" "설치된 수: $SKILL_COUNT"
+  log_test "FAIL" "전체 17개 스킬 설치" "설치된 수: $SKILL_COUNT"
 fi
 
 # 레거시 commands/ 심링크가 남아 있으면 안 된다 (v0.4.0 이전 설치 정리)
@@ -107,9 +107,9 @@ else
 fi
 
 # 언더스코어 alias — README/스킬 본문이 안내하는 언더스코어 명령이 실제로 설치됐는지
-ALIAS_COUNT=$(ls -d "$HOME/.claude/skills"/{cover_letter,company_research,mock_interview,job_search,experience_bank,career_history,scout_profile} 2>/dev/null | wc -l | tr -d ' ')
-if [ "$ALIAS_COUNT" -eq 7 ]; then
-  log_test "PASS" "언더스코어 alias 7개 설치 (/cover_letter 등)"
+ALIAS_COUNT=$(ls -d "$HOME/.claude/skills"/{personal_career,cover_letter,company_research,mock_interview,job_search,experience_bank,career_history,scout_profile} 2>/dev/null | wc -l | tr -d ' ')
+if [ "$ALIAS_COUNT" -eq 8 ]; then
+  log_test "PASS" "언더스코어 alias 8개 설치 (/personal_career 등)"
 else
   log_test "FAIL" "언더스코어 alias 설치" "설치된 수: $ALIAS_COUNT"
 fi
@@ -165,7 +165,7 @@ echo "## 2. 프리앰블 테스트"
 echo ""
 
 # 각 스킬의 프리앰블 bash 블록 실행
-for skill_dir in "$PROJECT_DIR"/{auto,strategy,resume,cover-letter,company-research,mock-interview,review,tracker,retro,portfolio,job-search,ncs,salary,experience-bank,career-history,scout-profile}; do
+for skill_dir in "$PROJECT_DIR"/{auto,personal-career,strategy,resume,cover-letter,company-research,mock-interview,review,tracker,retro,portfolio,job-search,ncs,salary,experience-bank,career-history,scout-profile}; do
   skill_name=$(basename "$skill_dir")
   SKILL_FILE="$skill_dir/SKILL.md"
   if [ ! -f "$SKILL_FILE" ]; then
